@@ -1,0 +1,17 @@
+Looking in indexes: https://pypi.org/simple, https://www.piwheels.org/simple
+Collecting psycopg2
+  Downloading psycopg2-2.9.12.tar.gz (379 kB)
+  Installing build dependencies: started
+  Installing build dependencies: finished with status 'done'
+  Getting requirements to build wheel: started
+  Getting requirements to build wheel: finished with status 'done'
+  Preparing metadata (pyproject.toml): started
+  Preparing metadata (pyproject.toml): finished with status 'done'
+Building wheels for collected packages: psycopg2
+  Building wheel for psycopg2 (pyproject.toml): started
+  Building wheel for psycopg2 (pyproject.toml): finished with status 'done'
+  Created wheel for psycopg2: filename=psycopg2-2.9.12-cp313-cp313-linux_aarch64.whl size=502751 sha256=baf4bfcd0c59ea343338477ece3041e492346f01c45c27af0dbd18d375071050
+  Stored in directory: /home/keya/.cache/pip/wheels/89/4c/bf/593fec4aa6941da2ec5f139e96084454d042098ed346b0e5ae
+Successfully built psycopg2
+Installing collected packages: psycopg2
+Successfully installed psycopg2-2.9.12
