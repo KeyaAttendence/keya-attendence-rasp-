@@ -17,6 +17,7 @@ sudo apt-get install -y \
     liblapack-dev \
     libx11-dev \
     libgtk-3-dev \
+    libgl1-mesa-glx \
     python3-dev \
     libpq-dev \
     pkg-config
@@ -28,8 +29,8 @@ if [ ! -d ".venv" ]; then
 fi
 source .venv/bin/activate
 
-# 3. Upgrade pip
-pip install --upgrade pip
+# 3. Upgrade pip and setuptools
+pip install --upgrade pip setuptools
 
 # 4. Install Requirements
 echo "📥 Installing Python packages (this may take a few minutes for dlib)..."
