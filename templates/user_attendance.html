@@ -559,10 +559,11 @@
         let inactivityTimer = null;
 
         function resetInactivityTimer() {
-            if (inactivityTimer) clearTimeout(inactivityTimer);
-            inactivityTimer = setTimeout(() => {
-                window.location.reload();
-            }, 60000); // 60 seconds of no face detected = reload
+            // Disabled inactivity timer so camera never goes off
+            // if (inactivityTimer) clearTimeout(inactivityTimer);
+            // inactivityTimer = setTimeout(() => {
+            //     window.location.reload();
+            // }, 60000); 
         }
 
         // ── Pre-Recorded Audio Logic ──
