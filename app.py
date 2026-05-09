@@ -145,26 +145,38 @@ def user_panel():
 
 @app.route('/api/last_activity')
 def last_activity():
-    logs = get_attendance_logs(limit=1)
-    if logs:
-        log = logs[0]
-        # Find employee name
-        from database import get_all_employees_no_blob
-        emps = get_all_employees_no_blob()
-        emp_name = next((e['name'] for e in emps if e['employee_id'] == log['employee_id']), log['employee_id'])
+    # Fetch enough logs to find both last IN and last OUT
+    logs = get_attendance_logs(limit=20)
+    last_in = None
+    last_out = None
+    
+    from database import get_all_employees_no_blob
+    emps = get_all_employees_no_blob()
+    id_map = {e['employee_id']: e['name'] for e in emps}
+    
+    for log in logs:
+        # Find last IN (login_time is set and not 'Absent')
+        if not last_in and log['login_time'] != 'Absent':
+            last_in = {
+                "name": id_map.get(log['employee_id'], log['employee_id']),
+                "time": log['login_time']
+            }
         
-        status = "Active"
-        if log['logout_time'] != '---':
-            status = "Logged Out"
-        elif log['login_time'] != 'Absent':
-            status = "Logged In"
+        # Find last OUT (logout_time is set and not '---')
+        if not last_out and log['logout_time'] != '---':
+            last_out = {
+                "name": id_map.get(log['employee_id'], log['employee_id']),
+                "time": log['logout_time']
+            }
             
-        return jsonify({
-            "success": True,
-            "name": emp_name,
-            "time": status
-        })
-    return jsonify({"success": False})
+        if last_in and last_out:
+            break
+            
+    return jsonify({
+        "success": True,
+        "last_in": last_in,
+        "last_out": last_out
+    })
 
 @app.route('/manifest.json')
 def serve_manifest():
