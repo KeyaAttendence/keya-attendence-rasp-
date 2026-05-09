@@ -30,7 +30,7 @@ fi
 source .venv/bin/activate
 
 # 3. Upgrade pip and setuptools
-pip install --upgrade pip setuptools
+pip install --upgrade pip "setuptools<70"
 
 # 4. Install Requirements
 echo "📥 Installing Python packages (this may take a few minutes for dlib)..."
