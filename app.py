@@ -654,4 +654,6 @@ def api_delete_attendance_record(record_id):
     return jsonify(success=False, message="Failed to delete record.")
 
 if __name__ == '__main__':
+    # Kill any existing process on port 5005
+    os.system("fuser -k 5005/tcp >/dev/null 2>&1 || true")
     app.run(host='0.0.0.0', port=5005, debug=True, threaded=True)
