@@ -147,48 +147,39 @@ def user_panel():
 def last_activity():
     conn = get_db_connection()
     cursor = get_cursor(conn)
-    p = get_placeholder()
     
     try:
-        # 1. Get Last Login (robust for Postgres/SQLite)
+        # Get the single most recent activity (order by date then latest time)
+        # Note: We check both login_time and logout_time to find the absolute latest entry
         cursor.execute(f"""
-            SELECT e.name, a.login_time 
+            SELECT e.name, a.login_time, a.logout_time, a.date
             FROM attendance a 
             JOIN employees e ON a.employee_id = e.employee_id 
-            WHERE a.login_time IS NOT NULL 
-              AND a.login_time != 'Absent' 
-              AND a.login_time != '' 
-              AND a.login_time != '---'
-            ORDER BY a.date DESC, a.login_time DESC LIMIT 1
+            WHERE a.login_time != 'Absent' AND a.login_time != ''
+            ORDER BY a.date DESC, a.login_time DESC, a.logout_time DESC LIMIT 1
         """)
-        last_in_row = cursor.fetchone()
+        row = cursor.fetchone()
         
-        # 2. Get Last Logout (robust for Postgres/SQLite)
-        cursor.execute(f"""
-            SELECT e.name, a.logout_time 
-            FROM attendance a 
-            JOIN employees e ON a.employee_id = e.employee_id 
-            WHERE a.logout_time IS NOT NULL 
-              AND a.logout_time != '---' 
-              AND a.logout_time != ''
-            ORDER BY a.date DESC, a.logout_time DESC LIMIT 1
-        """)
-        last_out_row = cursor.fetchone()
-        
-        # Debug Log (Visible in your terminal)
-        print(f"DEBUG: Last IN: {last_in_row}, Last OUT: {last_out_row}")
-        
+        if row:
+            # Determine if the latest action was a logout or login
+            status = "Logged In"
+            time = row['login_time']
+            if row['logout_time'] and row['logout_time'] != '---' and row['logout_time'] != '':
+                status = "Logged Out"
+                time = row['logout_time']
+                
+            return jsonify({
+                "success": True,
+                "name": row['name'],
+                "status": status,
+                "time": time
+            })
     except Exception as e:
         print(f"API Error: {e}")
-        last_in_row = last_out_row = None
     finally:
         release_db_connection(conn)
-    
-    return jsonify({
-        "success": True,
-        "last_in": {"name": last_in_row['name'] if last_in_row else "---", "time": last_in_row['login_time'] if last_in_row else "--:--"} if last_in_row else None,
-        "last_out": {"name": last_out_row['name'] if last_out_row else "---", "time": last_out_row['logout_time'] if last_out_row else "--:--"} if last_out_row else None
-    })
+        
+    return jsonify({"success": False})
 
 @app.route('/manifest.json')
 def serve_manifest():

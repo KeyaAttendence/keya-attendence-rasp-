@@ -271,60 +271,60 @@
             background: var(--primary-dark);
         }
 
-        /* ── Last Activity Cards ── */
-        .activity-container {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 12px;
-            width: 100%;
-        }
-
+        /* ── Last Activity Card ── */
         .last-signin-card {
             background: white;
-            padding: 16px;
-            border-radius: 20px;
+            padding: 20px;
+            border-radius: 24px;
             border: 1px solid var(--border);
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
-            transition: all 0.3s;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.05);
+            display: none; /* Hidden until first activity */
         }
 
         .last-signin-title {
-            font-size: 0.65rem;
+            font-size: 0.75rem;
             text-transform: uppercase;
             color: var(--text-dim);
-            letter-spacing: 0.5px;
-            margin-bottom: 8px;
+            letter-spacing: 1px;
+            margin-bottom: 12px;
             display: flex;
             align-items: center;
-            gap: 4px;
+            gap: 6px;
         }
 
         .last-signin-content {
             display: flex;
-            flex-direction: column;
-            gap: 4px;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .last-signin-avatar {
+            width: 44px;
+            height: 44px;
+            background: #f1f5f9;
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--primary);
+            font-size: 1.2rem;
         }
 
         .last-signin-info h5 {
-            font-size: 0.9rem;
+            font-size: 1rem;
             color: var(--text-main);
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
+            margin-bottom: 2px;
         }
 
         .last-signin-info p {
-            font-size: 0.75rem;
+            font-size: 0.8rem;
             color: var(--success);
             font-weight: 500;
         }
         
-        .type-out p {
+        .last-signin-info p.status-out {
             color: var(--accent);
         }
-
-        .last-signin-title i.fa-login { color: var(--success); }
-        .last-signin-title i.fa-logout { color: var(--accent); }
 
             padding: 16px;
             border: none;
@@ -596,28 +596,18 @@
                     <div class="status-text" id="statusText">Ready to Start</div>
                 </div>
 
-                <!-- Last Activity Cards -->
-                <div class="activity-container">
-                    <div class="last-signin-card" id="lastLoginCard">
-                        <div class="last-signin-title">
-                            <i class="fa-solid fa-right-to-bracket fa-login"></i> Last Login
-                        </div>
-                        <div class="last-signin-content">
-                            <div class="last-signin-info">
-                                <h5 id="lastLoginName">---</h5>
-                                <p id="lastLoginTime">--:--</p>
-                            </div>
-                        </div>
+                <!-- Last Activity Card -->
+                <div class="last-signin-card" id="lastActivityCard">
+                    <div class="last-signin-title">
+                        <i class="fa-solid fa-clock"></i> Last Activity
                     </div>
-                    <div class="last-signin-card type-out" id="lastLogoutCard">
-                        <div class="last-signin-title">
-                            <i class="fa-solid fa-right-from-bracket fa-logout"></i> Last Logout
+                    <div class="last-signin-content">
+                        <div class="last-signin-avatar">
+                            <i class="fa-solid fa-user-check"></i>
                         </div>
-                        <div class="last-signin-content">
-                            <div class="last-signin-info">
-                                <h5 id="lastLogoutName">---</h5>
-                                <p id="lastLogoutTime">--:--</p>
-                            </div>
+                        <div class="last-signin-info">
+                            <h5 id="lastActivityName">---</h5>
+                            <p id="lastActivityStatus">Just Now</p>
                         </div>
                     </div>
                 </div>
@@ -726,27 +716,30 @@
                 const res = await fetch('/api/last_activity');
                 const data = await res.json();
                 if (data.success) {
-                    if (data.last_in) updateLastActivity('IN', data.last_in.name, data.last_in.time);
-                    if (data.last_out) updateLastActivity('OUT', data.last_out.name, data.last_out.time);
+                    updateLastActivity(data.name, data.status);
                 }
             } catch (e) {
                 console.warn("Could not fetch initial last activity");
             }
         }
 
-        function updateLastActivity(type, name, time = "Just Now") {
-            const cardId = type === 'IN' ? 'lastLoginCard' : 'lastLogoutCard';
-            const nameId = type === 'IN' ? 'lastLoginName' : 'lastLogoutName';
-            const timeId = type === 'IN' ? 'lastLoginTime' : 'lastLogoutTime';
+        function updateLastActivity(name, status = "Just Now") {
+            const card = document.getElementById('lastActivityCard');
+            const nameEl = document.getElementById('lastActivityName');
+            const statusEl = document.getElementById('lastActivityStatus');
             
-            const card = document.getElementById(cardId);
-            const nameEl = document.getElementById(nameId);
-            const timeEl = document.getElementById(timeId);
-            
-            if (!card || !nameEl || !timeEl) return;
+            if (!card || !nameEl || !statusEl) return;
             
             nameEl.textContent = name;
-            timeEl.textContent = time;
+            statusEl.textContent = status;
+            
+            if (status.includes('Out')) {
+                statusEl.classList.add('status-out');
+            } else {
+                statusEl.classList.remove('status-out');
+            }
+
+            card.style.display = 'block';
             
             // Add subtle highlight animation
             card.style.animation = 'none';
@@ -971,28 +964,28 @@
                                 sState = 'state-success';
                                 showHud(displayName, 'Duty Started', 'in');
                                 playSound(morningSound);
-                                updateLastActivity('IN', displayName);
+                                updateLastActivity(displayName, 'Logged In');
                             } else if (data.type === 'OUT') {
                                 sText = `<b>Logout Successful</b><br>${displayName}`;
                                 sIcon = '<i class="fa-solid fa-right-from-bracket"></i>';
                                 sState = 'state-out';
                                 showHud(displayName, 'Duty Completed', 'out');
                                 playSound(byeSound);
-                                updateLastActivity('OUT', displayName);
+                                updateLastActivity(displayName, 'Logged Out');
                             } else if (data.type === 'ALREADY_IN') {
                                 sText = `<b>Status: Active</b><br>${displayName}`;
                                 sIcon = '<i class="fa-solid fa-user-check"></i>';
                                 sState = 'state-info';
                                 showHud(displayName, 'Already Logged In', 'info');
                                 playSound(successSound);
-                                updateLastActivity('IN', displayName);
+                                updateLastActivity(displayName, 'Logged In');
                             } else if (data.type === 'ALREADY_OUT') {
                                 sText = `<b>Already Out</b><br>${displayName}`;
                                 sIcon = '<i class="fa-solid fa-calendar-check"></i>';
                                 sState = 'state-info';
                                 showHud(displayName, 'Already Logged Out', 'info');
                                 playSound(successSound);
-                                updateLastActivity('OUT', displayName);
+                                updateLastActivity(displayName, 'Logged Out');
                             } else if (data.type === 'OVERRIDE') {
                                 sText = `<b>${data.message}</b><br>${displayName}`;
                                 sIcon = '<i class="fa-solid fa-user-clock"></i>';
