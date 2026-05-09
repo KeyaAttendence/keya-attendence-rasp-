@@ -17,7 +17,7 @@ sudo apt-get install -y \
     liblapack-dev \
     libx11-dev \
     libgtk-3-dev \
-    libgl1-mesa-glx \
+    libgl1 \
     python3-dev \
     libpq-dev \
     pkg-config
