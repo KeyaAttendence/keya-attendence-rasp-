@@ -1,0 +1,7 @@
+{
+    "python.defaultInterpreterPath": "/home/ashish/.local/share/mise/shims/python",
+    "python.interpreterPath": "/home/ashish/.local/share/mise/shims/python",
+    "python.analysis.extraPaths": [
+        "/home/ashish/.local/share/mise/installs/python/3.14.4/lib/python3.14/site-packages"
+    ]
+}
