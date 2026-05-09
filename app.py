@@ -145,37 +145,36 @@ def user_panel():
 
 @app.route('/api/last_activity')
 def last_activity():
-    # Fetch enough logs to find both last IN and last OUT
-    logs = get_attendance_logs(limit=20)
-    last_in = None
-    last_out = None
+    conn = get_db_connection()
+    cursor = get_cursor(conn)
+    p = get_placeholder()
     
-    from database import get_all_employees_no_blob
-    emps = get_all_employees_no_blob()
-    id_map = {e['employee_id']: e['name'] for e in emps}
+    # 1. Get Last Login (excluding Absents)
+    cursor.execute(f"""
+        SELECT e.name, a.login_time 
+        FROM attendance a 
+        JOIN employees e ON a.employee_id = e.employee_id 
+        WHERE a.login_time != 'Absent' 
+        ORDER BY a.date DESC, a.login_time DESC LIMIT 1
+    """)
+    last_in_row = cursor.fetchone()
     
-    for log in logs:
-        # Find last IN (login_time is set and not 'Absent')
-        if not last_in and log['login_time'] != 'Absent':
-            last_in = {
-                "name": id_map.get(log['employee_id'], log['employee_id']),
-                "time": log['login_time']
-            }
-        
-        # Find last OUT (logout_time is set and not '---')
-        if not last_out and log['logout_time'] != '---':
-            last_out = {
-                "name": id_map.get(log['employee_id'], log['employee_id']),
-                "time": log['logout_time']
-            }
-            
-        if last_in and last_out:
-            break
-            
+    # 2. Get Last Logout (excluding '---')
+    cursor.execute(f"""
+        SELECT e.name, a.logout_time 
+        FROM attendance a 
+        JOIN employees e ON a.employee_id = e.employee_id 
+        WHERE a.logout_time != '---' 
+        ORDER BY a.date DESC, a.logout_time DESC LIMIT 1
+    """)
+    last_out_row = cursor.fetchone()
+    
+    release_db_connection(conn)
+    
     return jsonify({
         "success": True,
-        "last_in": last_in,
-        "last_out": last_out
+        "last_in": {"name": last_in_row['name'], "time": last_in_row['login_time']} if last_in_row else None,
+        "last_out": {"name": last_out_row['name'], "time": last_out_row['logout_time']} if last_out_row else None
     })
 
 @app.route('/manifest.json')
