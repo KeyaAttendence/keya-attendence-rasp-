@@ -143,6 +143,29 @@ def history():
 def user_panel():
     return render_template('user_attendance.html')
 
+@app.route('/api/last_activity')
+def last_activity():
+    logs = get_attendance_logs(limit=1)
+    if logs:
+        log = logs[0]
+        # Find employee name
+        from database import get_all_employees_no_blob
+        emps = get_all_employees_no_blob()
+        emp_name = next((e['name'] for e in emps if e['employee_id'] == log['employee_id']), log['employee_id'])
+        
+        status = "Active"
+        if log['logout_time'] != '---':
+            status = "Logged Out"
+        elif log['login_time'] != 'Absent':
+            status = "Logged In"
+            
+        return jsonify({
+            "success": True,
+            "name": emp_name,
+            "time": status
+        })
+    return jsonify({"success": False})
+
 @app.route('/manifest.json')
 def serve_manifest():
     return send_file('static/manifest.json')

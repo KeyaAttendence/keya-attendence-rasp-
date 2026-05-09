@@ -248,6 +248,80 @@
         }
 
         .btn-kiosk {
+            width: 100%;
+            padding: 16px;
+            border-radius: 20px;
+            border: none;
+            background: var(--primary-gradient);
+            color: white;
+            font-size: 1.1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 12px;
+            box-shadow: 0 10px 20px rgba(37, 99, 235, 0.2);
+        }
+
+        .btn-kiosk:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 15px 30px rgba(37, 99, 235, 0.3);
+            background: var(--primary-dark);
+        }
+
+        /* ── Last Sign-in Card ── */
+        .last-signin-card {
+            background: white;
+            padding: 20px;
+            border-radius: 24px;
+            border: 1px solid var(--border);
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.05);
+            display: none; /* Hidden until first sign-in */
+        }
+
+        .last-signin-title {
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            color: var(--text-dim);
+            letter-spacing: 1px;
+            margin-bottom: 12px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .last-signin-content {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .last-signin-avatar {
+            width: 44px;
+            height: 44px;
+            background: #f1f5f9;
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--primary);
+            font-size: 1.2rem;
+        }
+
+        .last-signin-info h5 {
+            font-size: 1rem;
+            color: var(--text-main);
+            margin-bottom: 2px;
+        }
+
+        .last-signin-info p {
+            font-size: 0.8rem;
+            color: var(--success);
+            font-weight: 500;
+        }
+
             padding: 16px;
             border: none;
             border-radius: 16px;
@@ -463,7 +537,13 @@
                 padding: 10px;
             }
         }
+        @keyframes pulse-green {
+            0% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.4); }
+            70% { box-shadow: 0 0 0 15px rgba(16, 185, 129, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
+        }
     </style>
+
 </head>
 
 <body class="state-idle">
@@ -512,15 +592,31 @@
                     <div class="status-text" id="statusText">Ready to Start</div>
                 </div>
 
+                <!-- Last Sign-in Card -->
+                <div class="last-signin-card" id="lastSigninCard">
+                    <div class="last-signin-title">
+                        <i class="fa-solid fa-clock"></i> Last Activity
+                    </div>
+                    <div class="last-signin-content">
+                        <div class="last-signin-avatar">
+                            <i class="fa-solid fa-user-check"></i>
+                        </div>
+                        <div class="last-signin-info">
+                            <h5 id="lastSigninName">---</h5>
+                            <p id="lastSigninTime">Just Now</p>
+                        </div>
+                    </div>
+                </div>
+
                 <div style="display: flex; flex-direction: column; gap: 10px;">
-                    <button class="btn-kiosk" id="btnStart">
+                    <button class="btn-kiosk" id="btnStart" style="display: none;">
                         <i class="fa-solid fa-play"></i> Start Attendance
                     </button>
                 </div>
 
                 <div
                     style="margin-top: 5px; color: var(--text-dim); font-size: 0.8rem; text-align: center; opacity: 0.8;">
-                    Focus capture area for 1 second to mark.
+                    Monitoring active...
                 </div>
             </div>
         </div>
@@ -602,6 +698,43 @@
         }
         setInterval(updateClock, 1000);
         updateClock();
+
+        // Auto-start camera
+        window.addEventListener('load', () => {
+            setTimeout(() => {
+                btnStart.click();
+            }, 1000);
+            fetchInitialLastActivity();
+        });
+
+        async function fetchInitialLastActivity() {
+            try {
+                const res = await fetch('/api/last_activity');
+                const data = await res.json();
+                if (data.success && data.name) {
+                    updateLastSignin(data.name, data.time);
+                }
+            } catch (e) {
+                console.warn("Could not fetch initial last activity");
+            }
+        }
+
+        function updateLastSignin(name, time = "Just Now") {
+            const card = document.getElementById('lastSigninCard');
+            const nameEl = document.getElementById('lastSigninName');
+            const timeEl = document.getElementById('lastSigninTime');
+            
+            if (!card || !nameEl || !timeEl) return;
+            
+            nameEl.textContent = name;
+            timeEl.textContent = time;
+            card.style.display = 'block';
+            
+            // Add subtle highlight animation
+            card.style.animation = 'none';
+            card.offsetHeight; // trigger reflow
+            card.style.animation = 'pulse-green 1s ease-out';
+        }
 
         btnStart.addEventListener('click', async () => {
             try {
@@ -820,18 +953,21 @@
                                 sState = 'state-success';
                                 showHud(displayName, 'Duty Started', 'in');
                                 playSound(morningSound);
+                                updateLastSignin(displayName, 'Logged In');
                             } else if (data.type === 'OUT') {
                                 sText = `<b>Logout Successful</b><br>${displayName}`;
                                 sIcon = '<i class="fa-solid fa-right-from-bracket"></i>';
                                 sState = 'state-out';
                                 showHud(displayName, 'Duty Completed', 'out');
                                 playSound(byeSound);
+                                updateLastSignin(displayName, 'Logged Out');
                             } else if (data.type === 'ALREADY_IN') {
                                 sText = `<b>Status: Active</b><br>${displayName}`;
                                 sIcon = '<i class="fa-solid fa-user-check"></i>';
                                 sState = 'state-info';
                                 showHud(displayName, 'Already Logged In', 'info');
                                 playSound(successSound);
+                                updateLastSignin(displayName, 'Active');
                             } else if (data.type === 'ALREADY_OUT') {
                                 sText = `<b>Already Out</b><br>${displayName}`;
                                 sIcon = '<i class="fa-solid fa-calendar-check"></i>';
