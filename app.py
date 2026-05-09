@@ -149,22 +149,22 @@ def last_activity():
     cursor = get_cursor(conn)
     p = get_placeholder()
     
-    # 1. Get Last Login (excluding Absents)
+    # 1. Get Last Login (excluding Absents and empty values)
     cursor.execute(f"""
         SELECT e.name, a.login_time 
         FROM attendance a 
         JOIN employees e ON a.employee_id = e.employee_id 
-        WHERE a.login_time != 'Absent' 
+        WHERE a.login_time != 'Absent' AND a.login_time != '' AND a.login_time IS NOT NULL
         ORDER BY a.date DESC, a.login_time DESC LIMIT 1
     """)
     last_in_row = cursor.fetchone()
     
-    # 2. Get Last Logout (excluding '---')
+    # 2. Get Last Logout (excluding default '---' or empty values)
     cursor.execute(f"""
         SELECT e.name, a.logout_time 
         FROM attendance a 
         JOIN employees e ON a.employee_id = e.employee_id 
-        WHERE a.logout_time != '---' 
+        WHERE a.logout_time != '---' AND a.logout_time != '' AND a.logout_time IS NOT NULL
         ORDER BY a.date DESC, a.logout_time DESC LIMIT 1
     """)
     last_out_row = cursor.fetchone()
