@@ -129,24 +129,45 @@ def init_db():
 
 # Helper functions
 def add_employee(employee_id, name, department, phone, email, face_encoding_bytes):
-    conn = get_db_connection()
-    cursor = get_cursor(conn)
-    p = get_placeholder()
+    # 1. ALWAYS write to Local SQLite
+    local_conn = get_local_db()
+    local_cursor = local_conn.cursor()
     try:
-        blob = psycopg2.Binary(face_encoding_bytes) if DB_URL else face_encoding_bytes
-        cursor.execute(f'''
+        local_cursor.execute('''
             INSERT INTO employees (employee_id, name, department, phone, email, face_encoding)
-            VALUES ({p}, {p}, {p}, {p}, {p}, {p})
-        ''', (employee_id, name, department, phone, email, blob))
-        conn.commit()
-        return True
-    except (sqlite3.IntegrityError, psycopg2.IntegrityError):
-        return False
+            VALUES (?, ?, ?, ?, ?, ?)
+        ''', (employee_id, name, department, phone, email, face_encoding_bytes))
+        local_conn.commit()
+    except sqlite3.IntegrityError:
+        local_conn.close()
+        return False # Already exists
     except Exception as e:
-        print(f"Error adding employee: {e}")
+        print(f"Local add_employee error: {e}")
+        local_conn.close()
         return False
     finally:
-        release_db_connection(conn)
+        if local_conn: local_conn.close()
+
+    # 2. If remote exists, write there too
+    if DB_URL:
+        remote_conn = None
+        try:
+            remote_conn = db_pool.getconn()
+            remote_cursor = remote_conn.cursor()
+            blob = psycopg2.Binary(face_encoding_bytes)
+            remote_cursor.execute('''
+                INSERT INTO employees (employee_id, name, department, phone, email, face_encoding)
+                VALUES (%s, %s, %s, %s, %s, %s)
+            ''', (employee_id, name, department, phone, email, blob))
+            remote_conn.commit()
+        except Exception as e:
+            print(f"Remote add_employee error: {e}")
+            # We don't return False here because it's already in Local
+        finally:
+            if remote_conn:
+                db_pool.putconn(remote_conn)
+                
+    return True
 
 def get_all_employees():
     conn = get_db_connection()
