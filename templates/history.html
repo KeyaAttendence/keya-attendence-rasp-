@@ -163,6 +163,11 @@ async function deleteRecord(eid, name, date) {
     });
     const data = await res.json();
     if (data.success) {
+      if (data.local_deleted === 0) {
+        alert(`Warning: Remote record might have been deleted, but no record was found in the LOCAL database for ${name} on ${date}. Please check if the ID is correct.`);
+      } else {
+        alert(data.message);
+      }
       location.reload();
     } else {
       alert(data.message || "Failed to delete record.");

@@ -411,9 +411,15 @@ def api_delete_attendance_record():
     if not eid or not date:
         return jsonify(success=False, message="Employee ID and Date are required.")
         
-    if delete_attendance_record(eid, date):
-        return jsonify(success=True)
-    return jsonify(success=False, message="Failed to delete record.")
+    success, local_rows, remote_rows = delete_attendance_record(eid, date)
+    if success:
+        return jsonify({
+            "success": True, 
+            "local_deleted": local_rows, 
+            "remote_deleted": remote_rows,
+            "message": f"Deleted {local_rows} local and {remote_rows} remote records."
+        })
+    return jsonify(success=False, message="Failed to execute delete operation.")
 
 # ─── API: Manual attendance override ──────────────────────────────────────────
 @app.route('/api/manual_attendance', methods=['POST'])
