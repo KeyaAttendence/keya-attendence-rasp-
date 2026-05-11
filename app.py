@@ -708,22 +708,36 @@ def api_delete_attendance_record_old(record_id):
 
 def background_sync_task():
     """
-    Thread that runs in background to sync local attendance to cloud.
+    Thread that runs in background to sync local attendance to cloud (Upload).
     """
-    print("Background Sync Thread Started.")
+    print("Background Upload Sync Thread Started.")
     while True:
         try:
             sync_attendance_to_supabase()
         except Exception as e:
-            print(f"Background Sync Error: {e}")
-        time.sleep(10) # Sync every 10 seconds
+            print(f"Background Upload Error: {e}")
+        time.sleep(10) # Upload every 10 seconds
+
+def background_download_task():
+    """
+    Thread that runs in background to fetch data from cloud to local (Download).
+    Runs every 60 seconds as requested.
+    """
+    print("Background Download Sync Thread Started.")
+    while True:
+        try:
+            from database import sync_remote_to_local
+            sync_remote_to_local()
+            # Also reload faces after download to catch new employees
+            reload_faces()
+        except Exception as e:
+            print(f"Background Download Error: {e}")
+        time.sleep(60) # Download every 1 minute
 
 if __name__ == '__main__':
-    # 1. Sync Remote -> Local on startup to get latest changes from Superuser
+    # 1. Initial Sync on startup
     from database import sync_remote_to_local
     sync_remote_to_local()
-    
-    # 2. Reload faces after sync
     reload_faces()
 
     # Kill any existing process on port 5005
@@ -731,8 +745,8 @@ if __name__ == '__main__':
         import subprocess
         subprocess.run("fuser -k 5005/tcp >/dev/null 2>&1 || true", shell=True)
         
-        # Start background sync thread (Local -> Remote)
-        sync_thread = threading.Thread(target=background_sync_task, daemon=True)
-        sync_thread.start()
+        # Start background threads
+        threading.Thread(target=background_sync_task, daemon=True).start()
+        threading.Thread(target=background_download_task, daemon=True).start()
     
     app.run(host='0.0.0.0', port=5005, debug=True, threaded=True)
