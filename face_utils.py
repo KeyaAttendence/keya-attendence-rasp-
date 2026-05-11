@@ -37,7 +37,14 @@ def serialize_encoding(encoding):
 
 def deserialize_encoding(encoding_bytes):
     """ Converts bytes from SQLite BLOB back to a numpy array """
-    return np.frombuffer(encoding_bytes, dtype=np.float64)
+    if not encoding_bytes or len(encoding_bytes) != 1024:
+        # 128 floats * 8 bytes each = 1024 bytes
+        return None
+    try:
+        return np.frombuffer(encoding_bytes, dtype=np.float64)
+    except Exception as e:
+        print(f"Error deserializing encoding: {e}")
+        return None
 
 def match_face(known_encodings, known_ids, face_encoding_to_check, tolerance=0.55):
     """

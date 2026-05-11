@@ -32,9 +32,13 @@ def reload_faces():
     for emp in get_all_employees():
         eid = emp['employee_id']
         name = emp['name']
-        known_ids.append(eid)
-        id_to_name[eid] = name
-        known_encodings.append(deserialize_encoding(emp['face_encoding']))
+        encoding = deserialize_encoding(emp['face_encoding'])
+        if encoding is not None:
+            known_ids.append(eid)
+            known_encodings.append(encoding)
+            id_to_name[eid] = name
+        else:
+            print(f"Skipping employee {eid} ({name}) due to invalid face encoding.")
 
 reload_faces()
 
