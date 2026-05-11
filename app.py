@@ -181,9 +181,8 @@ def last_activity():
                 "time": time
             })
     except Exception as e:
-        print(f"API Error: {e}")
-    finally:
-        release_db_connection(conn)
+        print(f"Error in last_activity: {e}")
+        return jsonify([])
         
     return jsonify({"success": False})
 
