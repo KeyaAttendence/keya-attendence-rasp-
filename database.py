@@ -537,30 +537,36 @@ def sync_attendance_to_supabase():
         remote_cursor = remote_conn.cursor()
         
         for row in unsynced:
-            # row format: (id, employee_id, date, login_time, logout_time, synced)
-            lid, eid, dt, login, logout, _ = row
-            
-            # Check if record already exists on remote
-            remote_cursor.execute("SELECT id FROM attendance WHERE employee_id = %s AND date = %s", (eid, dt))
-            remote_record = remote_cursor.fetchone()
-            
-            if remote_record:
-                # Update
-                remote_cursor.execute(
-                    "UPDATE attendance SET login_time = %s, logout_time = %s WHERE employee_id = %s AND date = %s",
-                    (login, logout, eid, dt)
-                )
-            else:
-                # Insert
-                remote_cursor.execute(
-                    "INSERT INTO attendance (employee_id, date, login_time, logout_time) VALUES (%s, %s, %s, %s)",
-                    (eid, dt, login, logout)
-                )
-            
-            remote_conn.commit()
-            mark_as_synced(lid)
-            
-        print("Sync complete.")
+            try:
+                # row format: (id, employee_id, date, login_time, logout_time, synced)
+                lid, eid, dt, login, logout, _ = row
+                
+                # Check if record already exists on remote
+                remote_cursor.execute("SELECT id FROM attendance WHERE employee_id = %s AND date = %s", (eid, dt))
+                remote_record = remote_cursor.fetchone()
+                
+                if remote_record:
+                    # Update
+                    remote_cursor.execute(
+                        "UPDATE attendance SET login_time = %s, logout_time = %s WHERE employee_id = %s AND date = %s",
+                        (login, logout, eid, dt)
+                    )
+                else:
+                    # Insert
+                    remote_cursor.execute(
+                        "INSERT INTO attendance (employee_id, date, login_time, logout_time) VALUES (%s, %s, %s, %s)",
+                        (eid, dt, login, logout)
+                    )
+                
+                remote_conn.commit()
+                mark_as_synced(lid)
+                print(f"Synced record for {eid} on {dt}")
+            except Exception as e:
+                print(f"Error syncing individual record for {row[1]}: {e}")
+                remote_conn.rollback() # Rollback only this record's transaction
+                continue # Move to next record
+        
+        print("Sync batch finished.")
     except Exception as e:
         print(f"Sync error: {e}")
         if remote_conn:
