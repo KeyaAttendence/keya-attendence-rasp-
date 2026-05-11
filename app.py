@@ -10,7 +10,7 @@ import base64
 import threading
 import time
 
-from database import init_db, add_employee, update_employee, get_all_employees, get_all_employees_no_blob, delete_employee, mark_attendance, get_attendance_logs, get_attendance_logs_count, update_attendance_time, get_db_connection, get_cursor, get_placeholder, sync_attendance_to_supabase
+from database import init_db, add_employee, update_employee, get_all_employees, get_all_employees_no_blob, delete_employee, mark_attendance, get_attendance_logs, get_attendance_logs_count, update_attendance_time, get_db_connection, get_cursor, get_placeholder, sync_attendance_to_supabase, delete_attendance_record
 from face_utils import encode_face_from_image, serialize_encoding, deserialize_encoding, match_face
 
 app = Flask(__name__)
