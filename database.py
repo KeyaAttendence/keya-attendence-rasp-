@@ -227,7 +227,7 @@ def mark_attendance(employee_id):
 
     cursor.execute('''
         SELECT id, login_time, logout_time FROM attendance 
-        WHERE employee_id = ? AND date = ?
+        WHERE UPPER(TRIM(employee_id)) = UPPER(TRIM(?)) AND TRIM(date) = TRIM(?)
     ''', (employee_id, today))
     
     record = cursor.fetchone()
@@ -332,47 +332,52 @@ def delete_attendance_record(employee_id, date):
     # 1. ALWAYS delete from Local SQLite
     local_conn = get_local_db()
     local_cursor = local_conn.cursor()
-    employee_id = employee_id.strip()
-    date = date.strip()
+    employee_id = str(employee_id).strip()
+    date = str(date).strip()
+    
+    log_msg = f"\n--- {datetime.datetime.now()} ---\n"
+    log_msg += f"Request: EID='{employee_id}', DATE='{date}'\n"
     
     try:
-        print(f"DEBUG: [LOCAL] Attempting to delete record for EID: '{employee_id}' on DATE: '{date}'")
-        # Use TRIM and UPPER for a more robust match
+        # Use TRIM and UPPER for a more robust match on both fields
         local_cursor.execute("""
             DELETE FROM attendance 
             WHERE UPPER(TRIM(employee_id)) = UPPER(TRIM(?)) 
-            AND date = ?
+            AND TRIM(date) = TRIM(?)
         """, (employee_id, date))
         rows_deleted = local_cursor.rowcount
         local_conn.commit()
-        print(f"DEBUG: [LOCAL] Rows deleted: {rows_deleted}")
+        log_msg += f"LOCAL: Rows deleted = {rows_deleted}\n"
         
         # 2. If remote exists, delete from there too
         remote_rows = 0
         if DB_URL:
             remote_conn = None
             try:
-                print(f"DEBUG: [REMOTE] Attempting to delete record for EID: '{employee_id}' on DATE: '{date}'")
                 remote_conn = db_pool.getconn()
                 remote_cursor = remote_conn.cursor()
-                # PostgreSQL also supports TRIM and UPPER
                 remote_cursor.execute("""
                     DELETE FROM attendance 
                     WHERE UPPER(TRIM(employee_id)) = UPPER(TRIM(%s)) 
-                    AND date = %s
+                    AND TRIM(date) = TRIM(%s)
                 """, (employee_id, date))
                 remote_rows = remote_cursor.rowcount
                 remote_conn.commit()
-                print(f"DEBUG: [REMOTE] Rows deleted: {remote_rows}")
+                log_msg += f"REMOTE: Rows deleted = {remote_rows}\n"
             except Exception as re:
-                print(f"DEBUG: [REMOTE] Delete error: {re}")
+                log_msg += f"REMOTE ERROR: {re}\n"
             finally:
                 if remote_conn:
                     db_pool.putconn(remote_conn)
-                    
+        
+        # Write to debug log file
+        with open("debug_delete.log", "a") as f:
+            f.write(log_msg)
+            
         return True, rows_deleted, remote_rows
     except Exception as e:
-        print(f"Error deleting attendance record: {e}")
+        with open("debug_delete.log", "a") as f:
+            f.write(f"CRITICAL ERROR: {e}\n")
         return False, 0, 0
     finally:
         local_conn.close()
