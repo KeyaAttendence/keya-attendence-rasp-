@@ -719,12 +719,19 @@ def background_sync_task():
         time.sleep(10) # Sync every 10 seconds
 
 if __name__ == '__main__':
-    # Kill any existing process on port 5005 (only in the main process, not the reloader)
+    # 1. Sync Remote -> Local on startup to get latest changes from Superuser
+    from database import sync_remote_to_local
+    sync_remote_to_local()
+    
+    # 2. Reload faces after sync
+    reload_faces()
+
+    # Kill any existing process on port 5005
     if os.environ.get('WERKZEUG_RUN_MAIN') != 'true':
         import subprocess
         subprocess.run("fuser -k 5005/tcp >/dev/null 2>&1 || true", shell=True)
         
-        # Start background sync thread only once
+        # Start background sync thread (Local -> Remote)
         sync_thread = threading.Thread(target=background_sync_task, daemon=True)
         sync_thread.start()
     

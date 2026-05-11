@@ -409,17 +409,57 @@ def delete_attendance_record(employee_id, date):
                 if remote_conn:
                     db_pool.putconn(remote_conn)
         
-        # Write to debug log file
-        with open("debug_delete.log", "a") as f:
-            f.write(log_msg)
+def sync_remote_to_local():
+    """
+    Downloads all employees and recent attendance records from Supabase to Local.
+    Ensures Local reflects changes made by Superuser in cloud.
+    """
+    if not DB_URL:
+        return
+    
+    remote_conn = None
+    try:
+        print("DEBUG: Syncing Remote -> Local...")
+        remote_conn = db_pool.getconn()
+        remote_cursor = remote_conn.cursor(cursor_factory=RealDictCursor)
+        
+        # 1. Sync Employees
+        remote_cursor.execute("SELECT * FROM employees")
+        remote_employees = remote_cursor.fetchall()
+        
+        local_conn = get_local_db()
+        local_cursor = local_conn.cursor()
+        
+        for emp in remote_employees:
+            # Convert memoryview to bytes if needed
+            enc = emp['face_encoding']
+            if isinstance(enc, memoryview): enc = enc.tobytes()
             
-        return True, rows_deleted, remote_rows
-    except Exception as e:
-        with open("debug_delete.log", "a") as f:
-            f.write(f"CRITICAL ERROR: {e}\n")
-        return False, 0, 0
-    finally:
+            local_cursor.execute("""
+                INSERT OR REPLACE INTO employees (employee_id, name, department, phone, email, face_encoding)
+                VALUES (?, ?, ?, ?, ?, ?)
+            """, (emp['employee_id'], emp['name'], emp['department'], emp['phone'], emp['email'], enc))
+        
+        # 2. Sync Attendance (Latest records)
+        # We only sync last 30 days to avoid huge local DB, or all if preferred
+        remote_cursor.execute("SELECT * FROM attendance ORDER BY date DESC LIMIT 1000")
+        remote_attendance = remote_cursor.fetchall()
+        
+        for att in remote_attendance:
+            local_cursor.execute("""
+                INSERT OR REPLACE INTO attendance (employee_id, date, login_time, logout_time, synced)
+                VALUES (?, ?, ?, ?, 1)
+            """, (att['employee_id'], str(att['date']), att['login_time'], att['logout_time']))
+            
+        local_conn.commit()
         local_conn.close()
+        print("DEBUG: Remote -> Local Sync Complete.")
+        
+    except Exception as e:
+        print(f"Sync Remote->Local Error: {e}")
+    finally:
+        if remote_conn:
+            db_pool.putconn(remote_conn)
 
 def get_unsynced_attendance():
     conn = get_local_db()
