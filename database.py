@@ -16,16 +16,23 @@ if DB_URL:
     # Connection pool to drastically reduce connection time to remote database
     db_pool = pool.ThreadedConnectionPool(1, 10, DB_URL)
 
+def get_local_db():
+    conn = sqlite3.connect(SQLITE_PATH)
+    conn.row_factory = sqlite3.Row
+    return conn
+
 def get_db_connection():
     if DB_URL:
         # PostgreSQL (Supabase) using Pool
-        conn = db_pool.getconn()
-        return conn
+        try:
+            conn = db_pool.getconn()
+            return conn
+        except Exception as e:
+            print(f"Error getting remote connection: {e}")
+            return get_local_db()
     else:
         # Local SQLite
-        conn = sqlite3.connect(SQLITE_PATH)
-        conn.row_factory = sqlite3.Row
-        return conn
+        return get_local_db()
 
 def release_db_connection(conn):
     if DB_URL:
@@ -42,60 +49,83 @@ def get_placeholder():
     return "%s" if DB_URL else "?"
 
 def init_db():
-    conn = get_db_connection()
-    cursor = get_cursor(conn)
-    p = get_placeholder()
+    # 1. ALWAYS initialize Local SQLite
+    local_conn = get_local_db()
+    local_cursor = local_conn.cursor()
+    
+    local_cursor.execute('''
+        CREATE TABLE IF NOT EXISTS employees (
+            employee_id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            department TEXT,
+            phone TEXT,
+            email TEXT,
+            face_encoding BLOB NOT NULL
+        )
+    ''')
+    local_cursor.execute('''
+        CREATE TABLE IF NOT EXISTS attendance (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            employee_id TEXT NOT NULL,
+            date TEXT NOT NULL,
+            login_time TEXT,
+            logout_time TEXT,
+            synced INTEGER DEFAULT 0,
+            FOREIGN KEY (employee_id) REFERENCES employees (employee_id)
+        )
+    ''')
+    
+    # Check if synced column exists (migration)
+    try:
+        local_cursor.execute("ALTER TABLE attendance ADD COLUMN synced INTEGER DEFAULT 0")
+    except sqlite3.OperationalError:
+        pass
+        
+    local_cursor.execute('CREATE INDEX IF NOT EXISTS idx_attendance_date ON attendance(date)')
+    local_cursor.execute('CREATE INDEX IF NOT EXISTS idx_attendance_emp_date ON attendance(employee_id, date)')
+    
+    local_conn.commit()
+    local_conn.close()
 
-    # Create Employees table
+    # 2. Initialize Remote PostgreSQL (if configured)
     if DB_URL:
-        cursor.execute(f'''
-            CREATE TABLE IF NOT EXISTS employees (
-                employee_id TEXT PRIMARY KEY,
-                name TEXT NOT NULL,
-                department TEXT,
-                phone TEXT,
-                email TEXT,
-                face_encoding BYTEA NOT NULL
-            )
-        ''')
-        cursor.execute(f'''
-            CREATE TABLE IF NOT EXISTS attendance (
-                id SERIAL PRIMARY KEY,
-                employee_id TEXT NOT NULL,
-                date TEXT NOT NULL,
-                login_time TEXT,
-                logout_time TEXT,
-                FOREIGN KEY (employee_id) REFERENCES employees (employee_id)
-            )
-        ''')
-        cursor.execute('CREATE INDEX IF NOT EXISTS idx_attendance_date ON attendance(date)')
-        cursor.execute('CREATE INDEX IF NOT EXISTS idx_attendance_emp_date ON attendance(employee_id, date)')
-    else:
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS employees (
-                employee_id TEXT PRIMARY KEY,
-                name TEXT NOT NULL,
-                department TEXT,
-                phone TEXT,
-                email TEXT,
-                face_encoding BLOB NOT NULL
-            )
-        ''')
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS attendance (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                employee_id TEXT NOT NULL,
-                date TEXT NOT NULL,
-                login_time TEXT,
-                logout_time TEXT,
-                FOREIGN KEY (employee_id) REFERENCES employees (employee_id)
-            )
-        ''')
-        cursor.execute('CREATE INDEX IF NOT EXISTS idx_attendance_date ON attendance(date)')
-        cursor.execute('CREATE INDEX IF NOT EXISTS idx_attendance_emp_date ON attendance(employee_id, date)')
-
-    conn.commit()
-    release_db_connection(conn)
+        remote_conn = None
+        try:
+            remote_conn = db_pool.getconn()
+            remote_cursor = remote_conn.cursor()
+            
+            remote_cursor.execute('''
+                CREATE TABLE IF NOT EXISTS employees (
+                    employee_id TEXT PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    department TEXT,
+                    phone TEXT,
+                    email TEXT,
+                    face_encoding BYTEA NOT NULL
+                )
+            ''')
+            remote_cursor.execute('''
+                CREATE TABLE IF NOT EXISTS attendance (
+                    id SERIAL PRIMARY KEY,
+                    employee_id TEXT NOT NULL,
+                    date TEXT NOT NULL,
+                    login_time TEXT,
+                    logout_time TEXT,
+                    FOREIGN KEY (employee_id) REFERENCES employees (employee_id)
+                )
+            ''')
+            remote_cursor.execute('CREATE INDEX IF NOT EXISTS idx_attendance_date ON attendance(date)')
+            remote_cursor.execute('CREATE INDEX IF NOT EXISTS idx_attendance_emp_date ON attendance(employee_id, date)')
+            
+            remote_conn.commit()
+            print("Remote Database Initialized.")
+        except Exception as e:
+            print(f"Remote DB Init Error: {e}")
+            if remote_conn:
+                remote_conn.rollback()
+        finally:
+            if remote_conn:
+                db_pool.putconn(remote_conn)
 
 # Helper functions
 def add_employee(employee_id, name, department, phone, email, face_encoding_bytes):
@@ -189,68 +219,56 @@ def delete_employee(employee_id):
     release_db_connection(conn)
 
 def mark_attendance(employee_id):
-    conn = get_db_connection()
-    cursor = get_cursor(conn)
-    p = get_placeholder()
+    # ALWAYS use local DB for marking to ensure speed
+    conn = get_local_db()
+    cursor = conn.cursor()
     today = datetime.date.today().strftime('%Y-%m-%d')
     now_time = datetime.datetime.now().strftime('%H:%M:%S')
 
-    cursor.execute(f'''
+    cursor.execute('''
         SELECT id, login_time, logout_time FROM attendance 
-        WHERE employee_id = {p} AND date = {p}
+        WHERE employee_id = ? AND date = ?
     ''', (employee_id, today))
     
     record = cursor.fetchone()
 
     if not record:
         # First scan of the day -> Check-In
-        cursor.execute(f'''
-            INSERT INTO attendance (employee_id, date, login_time, logout_time)
-            VALUES ({p}, {p}, {p}, {p})
+        cursor.execute('''
+            INSERT INTO attendance (employee_id, date, login_time, logout_time, synced)
+            VALUES (?, ?, ?, ?, 0)
         ''', (employee_id, today, now_time, ""))
         conn.commit()
-        release_db_connection(conn)
+        conn.close()
         return "IN", f"Check-In: {now_time}"
     else:
-        # Extract values (handle both dict and tuple)
-        try:
-            rid = record['id']
-            login_val = record['login_time']
-            logout_val = record['logout_time']
-        except (TypeError, IndexError):
-            rid, login_val, logout_val = record[0], record[1], record[2]
+        rid, login_val, logout_val = record[0], record[1], record[2]
 
         # Safety: If manual override is active, don't update
-        if login_val == 'Absent' or logout_val == 'Absent' or login_val == 'Sick Leave' or login_val == 'Paid Leave':
-            release_db_connection(conn)
+        if login_val in ['Absent', 'Sick Leave', 'Paid Leave', 'Company Holiday']:
+            conn.close()
             return "OVERRIDE", "Manual Leave Active"
 
-        # We no longer block if already logged out; we update the checkout time
-        # so that the latest scan becomes the final check-out time.
-        
         # SAFETY WINDOW: Prevent accidental Check-Out if it's within 30 mins of Check-In
         try:
             from datetime import datetime as dt
-            # Handle potential different time formats like with or without AM/PM
             try:
                 t1 = dt.strptime(login_val, '%H:%M:%S')
             except ValueError:
-                # If it fails, try parsing with AM/PM (in case of manual entry)
                 t1 = dt.strptime(login_val, '%I:%M %p')
                 
             t2 = dt.strptime(now_time, '%H:%M:%S')
             diff_sec = (t2 - t1).total_seconds()
             
-            # If less than 30 minutes (1800 seconds)
             if 0 <= diff_sec < 1800:
-                release_db_connection(conn)
+                conn.close()
                 return "ALREADY_IN", f"Already Checked-In! (Wait 30m to Out)"
         except Exception as e:
             print(f"Time comparison error: {e}")
 
-        cursor.execute(f"UPDATE attendance SET logout_time = {p} WHERE id = {p}", (now_time, rid))
+        cursor.execute("UPDATE attendance SET logout_time = ?, synced = 0 WHERE id = ?", (now_time, rid))
         conn.commit()
-        release_db_connection(conn)
+        conn.close()
         
         if logout_val and logout_val != "":
             return "OUT", f"Check-Out Updated: {now_time}"
@@ -336,3 +354,69 @@ def delete_attendance_record(record_id):
         return False
     finally:
         release_db_connection(conn)
+
+def get_unsynced_attendance():
+    conn = get_local_db()
+    cursor = conn.cursor()
+    cursor.execute('SELECT * FROM attendance WHERE synced = 0')
+    rows = cursor.fetchall()
+    conn.close()
+    return rows
+
+def mark_as_synced(local_id):
+    conn = get_local_db()
+    cursor = conn.cursor()
+    cursor.execute('UPDATE attendance SET synced = 1 WHERE id = ?', (local_id,))
+    conn.commit()
+    conn.close()
+
+def sync_attendance_to_supabase():
+    """
+    Background task to sync local attendance records to Supabase.
+    """
+    if not DB_URL:
+        return
+    
+    unsynced = get_unsynced_attendance()
+    if not unsynced:
+        return
+
+    print(f"Syncing {len(unsynced)} records to Supabase...")
+    
+    remote_conn = None
+    try:
+        remote_conn = db_pool.getconn()
+        remote_cursor = remote_conn.cursor()
+        
+        for row in unsynced:
+            # row format: (id, employee_id, date, login_time, logout_time, synced)
+            lid, eid, dt, login, logout, _ = row
+            
+            # Check if record already exists on remote
+            remote_cursor.execute("SELECT id FROM attendance WHERE employee_id = %s AND date = %s", (eid, dt))
+            remote_record = remote_cursor.fetchone()
+            
+            if remote_record:
+                # Update
+                remote_cursor.execute(
+                    "UPDATE attendance SET login_time = %s, logout_time = %s WHERE employee_id = %s AND date = %s",
+                    (login, logout, eid, dt)
+                )
+            else:
+                # Insert
+                remote_cursor.execute(
+                    "INSERT INTO attendance (employee_id, date, login_time, logout_time) VALUES (%s, %s, %s, %s)",
+                    (eid, dt, login, logout)
+                )
+            
+            remote_conn.commit()
+            mark_as_synced(lid)
+            
+        print("Sync complete.")
+    except Exception as e:
+        print(f"Sync error: {e}")
+        if remote_conn:
+            remote_conn.rollback()
+    finally:
+        if remote_conn:
+            db_pool.putconn(remote_conn)

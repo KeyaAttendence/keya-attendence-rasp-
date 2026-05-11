@@ -7,8 +7,10 @@ import os
 import pandas as pd
 from datetime import datetime
 import base64
+import threading
+import time
 
-from database import init_db, add_employee, update_employee, get_all_employees, get_all_employees_no_blob, delete_employee, mark_attendance, get_attendance_logs, get_attendance_logs_count, update_attendance_time, get_db_connection, get_cursor, get_placeholder
+from database import init_db, add_employee, update_employee, get_all_employees, get_all_employees_no_blob, delete_employee, mark_attendance, get_attendance_logs, get_attendance_logs_count, update_attendance_time, get_db_connection, get_cursor, get_placeholder, sync_attendance_to_supabase
 from face_utils import encode_face_from_image, serialize_encoding, deserialize_encoding, match_face
 
 app = Flask(__name__)
@@ -415,12 +417,12 @@ def api_manual_attendance():
     if not eid or not status:
         return jsonify(success=False, message='Missing parameters')
         
-    conn = get_db_connection()
-    cursor = get_cursor(conn)
-    p = get_placeholder()
+    from database import get_local_db
+    conn = get_local_db()
+    cursor = conn.cursor()
     
     # Check if record exists
-    cursor.execute(f"SELECT id FROM attendance WHERE employee_id = {p} AND date = {p}", (eid, date_val))
+    cursor.execute("SELECT id FROM attendance WHERE employee_id = ? AND date = ?", (eid, date_val))
     record = cursor.fetchone()
     
     if status == 'Present':
@@ -440,9 +442,9 @@ def api_manual_attendance():
         rec_id = record[0] if isinstance(record, tuple) else record['id']
 
     if record:
-        cursor.execute(f"UPDATE attendance SET login_time = {p}, logout_time = {p} WHERE id = {p}", (in_time, out_time, rec_id))
+        cursor.execute("UPDATE attendance SET login_time = ?, logout_time = ?, synced = 0 WHERE id = ?", (in_time, out_time, rec_id))
     else:
-        cursor.execute(f"INSERT INTO attendance (employee_id, date, login_time, logout_time) VALUES ({p}, {p}, {p}, {p})", (eid, date_val, in_time, out_time))
+        cursor.execute("INSERT INTO attendance (employee_id, date, login_time, logout_time, synced) VALUES (?, ?, ?, ?, 0)", (eid, date_val, in_time, out_time))
         
     conn.commit()
     conn.close()
@@ -456,30 +458,24 @@ def api_mark_holiday_all():
     if not date_val:
         return jsonify(success=False, message='Date is required')
         
-    conn = get_db_connection()
-    cursor = get_cursor(conn)
-    p = get_placeholder()
+    from database import get_local_db
+    conn = get_local_db()
+    cursor = conn.cursor()
     
     employees = get_all_employees_no_blob()
     for emp in employees:
         eid = emp['employee_id']
-        cursor.execute(f"SELECT id FROM attendance WHERE employee_id = {p} AND date = {p}", (eid, date_val))
+        cursor.execute("SELECT id FROM attendance WHERE employee_id = ? AND date = ?", (eid, date_val))
         record = cursor.fetchone()
         
         in_time, out_time = 'Company Holiday', 'Company Holiday'
         
-        # Determine record id safely
-        rec_id = None
-        if record:
-            if type(record) is not dict:
-                rec_id = record[0] if isinstance(record, tuple) else record['id']
-            else:
-                rec_id = record['id']
+        rec_id = record[0] if record else None
                 
         if record:
-            cursor.execute(f"UPDATE attendance SET login_time = {p}, logout_time = {p} WHERE id = {p}", (in_time, out_time, rec_id))
+            cursor.execute("UPDATE attendance SET login_time = ?, logout_time = ?, synced = 0 WHERE id = ?", (in_time, out_time, rec_id))
         else:
-            cursor.execute(f"INSERT INTO attendance (employee_id, date, login_time, logout_time) VALUES ({p}, {p}, {p}, {p})", (eid, date_val, in_time, out_time))
+            cursor.execute("INSERT INTO attendance (employee_id, date, login_time, logout_time, synced) VALUES (?, ?, ?, ?, 0)", (eid, date_val, in_time, out_time))
             
     conn.commit()
     conn.close()
@@ -691,10 +687,26 @@ def api_delete_attendance_record(record_id):
         return jsonify(success=True)
     return jsonify(success=False, message="Failed to delete record.")
 
+def background_sync_task():
+    """
+    Thread that runs in background to sync local attendance to cloud.
+    """
+    print("Background Sync Thread Started.")
+    while True:
+        try:
+            sync_attendance_to_supabase()
+        except Exception as e:
+            print(f"Background Sync Error: {e}")
+        time.sleep(60) # Sync every 60 seconds
+
 if __name__ == '__main__':
     # Kill any existing process on port 5005 (only in the main process, not the reloader)
     if os.environ.get('WERKZEUG_RUN_MAIN') != 'true':
         import subprocess
         subprocess.run("fuser -k 5005/tcp >/dev/null 2>&1 || true", shell=True)
+        
+        # Start background sync thread only once
+        sync_thread = threading.Thread(target=background_sync_task, daemon=True)
+        sync_thread.start()
     
     app.run(host='0.0.0.0', port=5005, debug=True, threaded=True)
