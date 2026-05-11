@@ -233,6 +233,7 @@ def mark_attendance(employee_id):
     record = cursor.fetchone()
 
     if not record:
+        print(f"DEBUG: No record found for {employee_id} today ({today}). Creating new Check-In.")
         # First scan of the day -> Check-In
         cursor.execute('''
             INSERT INTO attendance (employee_id, date, login_time, logout_time, synced)
@@ -243,6 +244,7 @@ def mark_attendance(employee_id):
         return "IN", f"Check-In: {now_time}"
     else:
         rid, login_val, logout_val = record[0], record[1], record[2]
+        print(f"DEBUG: Record found for {employee_id} on {today}. Login: {login_val}, Logout: {logout_val}. Updating Logout.")
 
         # Safety: If manual override is active, don't update
         if login_val in ['Absent', 'Sick Leave', 'Paid Leave', 'Company Holiday']:
@@ -330,20 +332,29 @@ def delete_attendance_record(employee_id, date):
     # 1. ALWAYS delete from Local SQLite
     local_conn = get_local_db()
     local_cursor = local_conn.cursor()
+    employee_id = employee_id.strip()
+    date = date.strip()
+    
     try:
+        print(f"DEBUG: Attempting to delete local record for {employee_id} on {date}")
         local_cursor.execute("DELETE FROM attendance WHERE employee_id = ? AND date = ?", (employee_id, date))
+        rows_deleted = local_cursor.rowcount
         local_conn.commit()
+        print(f"DEBUG: Local rows deleted: {rows_deleted}")
         
         # 2. If remote exists, delete from there too
         if DB_URL:
             remote_conn = None
             try:
+                print(f"DEBUG: Attempting to delete remote record for {employee_id} on {date}")
                 remote_conn = db_pool.getconn()
                 remote_cursor = remote_conn.cursor()
                 remote_cursor.execute("DELETE FROM attendance WHERE employee_id = %s AND date = %s", (employee_id, date))
+                remote_rows = remote_cursor.rowcount
                 remote_conn.commit()
+                print(f"DEBUG: Remote rows deleted: {remote_rows}")
             except Exception as re:
-                print(f"Remote delete error: {re}")
+                print(f"DEBUG: Remote delete error: {re}")
             finally:
                 if remote_conn:
                     db_pool.putconn(remote_conn)
