@@ -409,6 +409,18 @@ def delete_attendance_record(employee_id, date):
                 if remote_conn:
                     db_pool.putconn(remote_conn)
         
+        # Write to debug log file
+        with open("debug_delete.log", "a") as f:
+            f.write(log_msg)
+            
+        return True, rows_deleted, remote_rows
+    except Exception as e:
+        with open("debug_delete.log", "a") as f:
+            f.write(f"CRITICAL ERROR: {e}\n")
+        return False, 0, 0
+    finally:
+        local_conn.close()
+
 def sync_remote_to_local():
     """
     Downloads all employees and recent attendance records from Supabase to Local.
