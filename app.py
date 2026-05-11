@@ -387,22 +387,33 @@ def api_get_my_attendance():
 @login_required
 def api_update_attendance_time():
     data = request.get_json(force=True)
-    rid_raw = data.get('id')
+    eid = data.get('employee_id')
+    date = data.get('date')
     login_t = data.get('login_time')
     logout_t = data.get('logout_time')
     
-    if not rid_raw:
-        return jsonify(success=False, message="Record ID is required.")
+    if not eid or not date:
+        return jsonify(success=False, message="Employee ID and Date are required.")
     
-    try:
-        rid = int(rid_raw)
-    except (ValueError, TypeError):
-        return jsonify(success=False, message="Invalid Record ID format.")
-    
-    ok = update_attendance_time(rid, login_t, logout_t)
+    ok = update_attendance_time(eid, date, login_t, logout_t)
     if ok:
         return jsonify(success=True, message="Attendance record updated successfully.")
     return jsonify(success=False, message="Failed to update record in database.")
+
+# ─── API: Delete attendance record ──────────────────────────────────────────
+@app.route('/api/delete_attendance_record', methods=['POST'])
+@login_required
+def api_delete_attendance_record():
+    data = request.get_json(force=True)
+    eid = data.get('employee_id')
+    date = data.get('date')
+    
+    if not eid or not date:
+        return jsonify(success=False, message="Employee ID and Date are required.")
+        
+    if delete_attendance_record(eid, date):
+        return jsonify(success=True)
+    return jsonify(success=False, message="Failed to delete record.")
 
 # ─── API: Manual attendance override ──────────────────────────────────────────
 @app.route('/api/manual_attendance', methods=['POST'])
@@ -681,11 +692,9 @@ def export_excel():
 
 @app.route('/api/delete_attendance_record/<int:record_id>', methods=['POST'])
 @login_required
-def api_delete_attendance_record(record_id):
-    from database import delete_attendance_record
-    if delete_attendance_record(record_id):
-        return jsonify(success=True)
-    return jsonify(success=False, message="Failed to delete record.")
+def api_delete_attendance_record_old(record_id):
+    # Deprecated: use /api/delete_attendance_record instead
+    return jsonify(success=False, message="Use new API with employee_id and date")
 
 def background_sync_task():
     """

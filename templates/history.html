@@ -37,10 +37,10 @@
               {% endif %}
             </td>
             <td>
-              <button class="btn btn-primary btn-sm" onclick="openTimeModal('{{ l.id }}', '{{ l.name }}', '{{ l.date }}', '{{ l.login_time }}', '{{ l.logout_time }}')" title="Edit Record" style="background-color: #6366f1; border-color: #6366f1; padding: 4px 8px;">
+              <button class="btn btn-primary btn-sm" onclick="openTimeModal('{{ l.employee_id }}', '{{ l.name }}', '{{ l.date }}', '{{ l.login_time }}', '{{ l.logout_time }}')" title="Edit Record" style="background-color: #6366f1; border-color: #6366f1; padding: 4px 8px;">
                 <i class="fa-solid fa-pen-to-square"></i>
               </button>
-              <button class="btn btn-danger btn-sm" onclick="deleteRecord('{{ l.id }}', '{{ l.name }}', '{{ l.date }}')" title="Delete Record" style="background-color: #ef4444; border-color: #ef4444; padding: 4px 8px;">
+              <button class="btn btn-danger btn-sm" onclick="deleteRecord('{{ l.employee_id }}', '{{ l.name }}', '{{ l.date }}')" title="Delete Record" style="background-color: #ef4444; border-color: #ef4444; padding: 4px 8px;">
                 <i class="fa-solid fa-trash"></i>
               </button>
             </td>
@@ -83,7 +83,8 @@
       <h3 id="modalTitle">Edit Time</h3>
     </div>
     <form id="timeForm">
-      <input type="hidden" id="recordId">
+      <input type="hidden" id="modalEmpId">
+      <input type="hidden" id="modalDate">
       <div style="margin-bottom:15px;">
         <label style="display:block; font-size:0.8rem; margin-bottom:5px; color:#64748b;">Login Time (HH:MM:SS or Absent)</label>
         <input type="text" id="loginTime" class="form-control" style="width:100%;">
@@ -101,8 +102,9 @@
 </div>
 
 <script>
-function openTimeModal(id, name, date, login, logout) {
-  document.getElementById('recordId').value = id;
+function openTimeModal(eid, name, date, login, logout) {
+  document.getElementById('modalEmpId').value = eid;
+  document.getElementById('modalDate').value = date;
   document.getElementById('modalTitle').textContent = `Edit: ${name} (${date})`;
   document.getElementById('loginTime').value = login === 'None' ? '' : login;
   document.getElementById('logoutTime').value = logout === 'None' || logout === '' ? '' : logout;
@@ -120,7 +122,8 @@ document.getElementById('timeForm').addEventListener('submit', async (e) => {
   saveBtn.textContent = "Saving...";
 
   const payload = {
-    id: document.getElementById('recordId').value,
+    employee_id: document.getElementById('modalEmpId').value,
+    date: document.getElementById('modalDate').value,
     login_time: document.getElementById('loginTime').value,
     logout_time: document.getElementById('logoutTime').value
   };
@@ -147,15 +150,16 @@ document.getElementById('timeForm').addEventListener('submit', async (e) => {
   }
 });
 
-async function deleteRecord(id, name, date) {
+async function deleteRecord(eid, name, date) {
   if (!confirm(`Are you sure you want to delete the attendance record for ${name} on ${date}? This action cannot be undone.`)) {
     return;
   }
 
   try {
-    const res = await fetch(`/api/delete_attendance_record/${id}`, {
+    const res = await fetch(`/api/delete_attendance_record`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' }
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ employee_id: eid, date: date })
     });
     const data = await res.json();
     if (data.success) {

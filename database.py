@@ -308,7 +308,7 @@ def get_attendance_logs_count(date=None):
     release_db_connection(conn)
     return count
 
-def update_attendance_time(record_id, login_time, logout_time):
+def update_attendance_time(employee_id, date, login_time, logout_time):
     # ALWAYS update local first and set synced=0 for background sync to pick it up
     conn = get_local_db()
     cursor = conn.cursor()
@@ -316,8 +316,8 @@ def update_attendance_time(record_id, login_time, logout_time):
         cursor.execute('''
             UPDATE attendance 
             SET login_time = ?, logout_time = ?, synced = 0 
-            WHERE id = ?
-        ''', (login_time, logout_time, record_id))
+            WHERE employee_id = ? AND date = ?
+        ''', (login_time, logout_time, employee_id, date))
         conn.commit()
         return True
     except Exception as e:
@@ -326,26 +326,21 @@ def update_attendance_time(record_id, login_time, logout_time):
     finally:
         conn.close()
 
-def delete_attendance_record(record_id):
+def delete_attendance_record(employee_id, date):
     # 1. ALWAYS delete from Local SQLite
     local_conn = get_local_db()
     local_cursor = local_conn.cursor()
     try:
-        # We need the employee_id and date to delete from remote too if record_id is local
-        local_cursor.execute("SELECT employee_id, date FROM attendance WHERE id = ?", (record_id,))
-        row = local_cursor.fetchone()
-        
-        local_cursor.execute("DELETE FROM attendance WHERE id = ?", (record_id,))
+        local_cursor.execute("DELETE FROM attendance WHERE employee_id = ? AND date = ?", (employee_id, date))
         local_conn.commit()
         
         # 2. If remote exists, delete from there too
-        if DB_URL and row:
-            eid, dt = row[0], row[1]
+        if DB_URL:
             remote_conn = None
             try:
                 remote_conn = db_pool.getconn()
                 remote_cursor = remote_conn.cursor()
-                remote_cursor.execute("DELETE FROM attendance WHERE employee_id = %s AND date = %s", (eid, dt))
+                remote_cursor.execute("DELETE FROM attendance WHERE employee_id = %s AND date = %s", (employee_id, date))
                 remote_conn.commit()
             except Exception as re:
                 print(f"Remote delete error: {re}")
