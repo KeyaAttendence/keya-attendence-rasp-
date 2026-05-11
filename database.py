@@ -249,22 +249,7 @@ def mark_attendance(employee_id):
             conn.close()
             return "OVERRIDE", "Manual Leave Active"
 
-        # SAFETY WINDOW: Prevent accidental Check-Out if it's within 30 mins of Check-In
-        try:
-            from datetime import datetime as dt
-            try:
-                t1 = dt.strptime(login_val, '%H:%M:%S')
-            except ValueError:
-                t1 = dt.strptime(login_val, '%I:%M %p')
-                
-            t2 = dt.strptime(now_time, '%H:%M:%S')
-            diff_sec = (t2 - t1).total_seconds()
-            
-            if 0 <= diff_sec < 1800:
-                conn.close()
-                return "ALREADY_IN", f"Already Checked-In! (Wait 30m to Out)"
-        except Exception as e:
-            print(f"Time comparison error: {e}")
+        # Every scan after the first one of the day will update the logout time.
 
         cursor.execute("UPDATE attendance SET logout_time = ?, synced = 0 WHERE id = ?", (now_time, rid))
         conn.commit()
