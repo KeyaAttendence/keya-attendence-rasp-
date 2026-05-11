@@ -482,9 +482,11 @@ def sync_remote_to_local():
                 VALUES (?, ?, ?, ?, ?, ?)
             """, (emp['employee_id'], emp['name'], emp['department'], emp['phone'], emp['email'], enc))
         
-        # 2. Sync Attendance (Latest records)
-        # We only sync last 30 days to avoid huge local DB, or all if preferred
-        remote_cursor.execute("SELECT * FROM attendance ORDER BY date DESC LIMIT 1000")
+        # 2. Sync Attendance (Latest 7 days)
+        # Fetching only last 7 days to keep it fast
+        six_days_ago = (datetime.date.today() - datetime.timedelta(days=7)).strftime('%Y-%m-%d')
+        
+        remote_cursor.execute("SELECT * FROM attendance WHERE date >= %s ORDER BY date DESC", (six_days_ago,))
         remote_attendance = remote_cursor.fetchall()
         
         for att in remote_attendance:
