@@ -64,23 +64,53 @@ def init_db():
         )
     ''')
     local_cursor.execute('''
-        CREATE TABLE IF NOT EXISTS attendance (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            employee_id TEXT NOT NULL,
-            date TEXT NOT NULL,
-            login_time TEXT,
-            logout_time TEXT,
-            synced INTEGER DEFAULT 0,
-            FOREIGN KEY (employee_id) REFERENCES employees (employee_id)
-        )
+            CREATE TABLE IF NOT EXISTS attendance (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                employee_id TEXT NOT NULL,
+                date TEXT NOT NULL,
+                login_time TEXT,
+                logout_time TEXT,
+                synced INTEGER DEFAULT 0,
+                UNIQUE(employee_id, date),
+                FOREIGN KEY (employee_id) REFERENCES employees (employee_id)
+            )
     ''')
     
-    # Check if synced column exists (migration)
+    # Migration: Add UNIQUE constraint to attendance if missing
+    # SQLite doesn't support ALTER TABLE for UNIQUE, so we check and migrate if needed
     try:
-        local_cursor.execute("ALTER TABLE attendance ADD COLUMN synced INTEGER DEFAULT 0")
-    except sqlite3.OperationalError:
-        pass
-        
+        local_cursor.execute("PRAGMA table_info(attendance)")
+        columns = local_cursor.fetchall()
+        # If we can't find 'UNIQUE' in the schema, we'll recreate the table (standard approach)
+        local_cursor.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='attendance'")
+        schema = local_cursor.fetchone()[0]
+        if 'UNIQUE' not in schema:
+            print("DEBUG: Migrating attendance table to add UNIQUE constraint...")
+            local_cursor.execute("ALTER TABLE attendance RENAME TO attendance_old")
+            local_cursor.execute('''
+                CREATE TABLE attendance (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    employee_id TEXT NOT NULL,
+                    date TEXT NOT NULL,
+                    login_time TEXT,
+                    logout_time TEXT,
+                    synced INTEGER DEFAULT 0,
+                    UNIQUE(employee_id, date),
+                    FOREIGN KEY (employee_id) REFERENCES employees (employee_id)
+                )
+            ''')
+            local_cursor.execute('''
+                INSERT INTO attendance (employee_id, date, login_time, logout_time, synced)
+                SELECT employee_id, date, login_time, logout_time, synced
+                FROM attendance_old
+                GROUP BY employee_id, date
+                HAVING id = MAX(id)
+            ''')
+            local_cursor.execute("DROP TABLE attendance_old")
+            print("DEBUG: Migration successful.")
+    except Exception as me:
+        print(f"Migration check/run error: {me}")
+
     local_cursor.execute('CREATE INDEX IF NOT EXISTS idx_attendance_date ON attendance(date)')
     local_cursor.execute('CREATE INDEX IF NOT EXISTS idx_attendance_emp_date ON attendance(employee_id, date)')
     
