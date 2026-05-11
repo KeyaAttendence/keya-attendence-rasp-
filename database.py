@@ -284,52 +284,70 @@ def mark_attendance(employee_id):
         return "OUT", f"Check-Out: {now_time}"
 
 def get_attendance_logs(date=None, limit=None, offset=None):
-    conn = get_db_connection()
-    cursor = get_cursor(conn)
-    p = get_placeholder()
+    # 1. Fetch from Local
+    local_conn = get_local_db()
+    local_cursor = local_conn.cursor()
+    
+    local_query = '''
+        SELECT a.id, a.employee_id, e.name, e.department, a.date, a.login_time, a.logout_time, a.synced
+        FROM attendance a 
+        JOIN employees e ON a.employee_id = e.employee_id
+    '''
+    params_local = []
     if date:
-        query = f'''
-            SELECT a.id, a.employee_id, e.name, e.department, a.date, a.login_time, a.logout_time 
-            FROM attendance a 
-            JOIN employees e ON a.employee_id = e.employee_id
-            WHERE a.date = {p}
-            ORDER BY a.login_time DESC
-        '''
-        if limit:
-            query += f" LIMIT {limit}"
-        if offset:
-            query += f" OFFSET {offset}"
-        cursor.execute(query, (date,))
-    else:
-        query = '''
-            SELECT a.id, a.employee_id, e.name, e.department, a.date, a.login_time, a.logout_time 
-            FROM attendance a 
-            JOIN employees e ON a.employee_id = e.employee_id
-            ORDER BY a.date DESC, a.login_time DESC
-        '''
-        if limit:
-            query += f" LIMIT {limit}"
-        if offset:
-            query += f" OFFSET {offset}"
-        cursor.execute(query)
-    logs = cursor.fetchall()
-    release_db_connection(conn)
-    return logs
+        local_query += " WHERE a.date = ?"
+        params_local.append(date)
+    local_query += " ORDER BY a.date DESC, a.login_time DESC"
+    
+    local_cursor.execute(local_query, params_local)
+    local_logs = [dict(row) for row in local_cursor.fetchall()]
+    local_conn.close()
+    
+    # 2. Fetch from Remote (if available)
+    remote_logs = []
+    if DB_URL:
+        remote_conn = None
+        try:
+            remote_conn = db_pool.getconn()
+            remote_cursor = remote_conn.cursor(cursor_factory=RealDictCursor)
+            
+            remote_query = '''
+                SELECT a.id, a.employee_id, e.name, e.department, a.date, a.login_time, a.logout_time, 1 as synced
+                FROM attendance a 
+                JOIN employees e ON a.employee_id = e.employee_id
+            '''
+            params_remote = []
+            if date:
+                remote_query += " WHERE a.date = %s"
+                params_remote.append(date)
+            remote_query += " ORDER BY a.date DESC, a.login_time DESC"
+            
+            # Fetch more than limit to ensure we have enough after merging
+            remote_cursor.execute(remote_query, params_remote)
+            remote_logs = remote_cursor.fetchall()
+        except Exception as e:
+            print(f"Error fetching remote logs: {e}")
+        finally:
+            if remote_conn:
+                db_pool.putconn(remote_conn)
+                
+    # 3. Merge: Local (unsynced) should take priority
+    merged = {}
+    for l in remote_logs:
+        merged[(l['employee_id'], str(l['date']))] = l
+    for l in local_logs:
+        merged[(l['employee_id'], str(l['date']))] = l
+        
+    final_list = list(merged.values())
+    final_list.sort(key=lambda x: (str(x['date']), str(x['login_time'])), reverse=True)
+    
+    if limit:
+        return final_list[offset:offset+limit] if offset else final_list[:limit]
+    return final_list
 
 def get_attendance_logs_count(date=None):
-    conn = get_db_connection()
-    cursor = get_cursor(conn)
-    p = get_placeholder()
-    if date:
-        cursor.execute(f"SELECT COUNT(*) FROM attendance WHERE date = {p}", (date,))
-    else:
-        cursor.execute("SELECT COUNT(*) FROM attendance")
-    
-    count_row = cursor.fetchone()
-    # Handle dict or tuple
-    count = count_row['count'] if isinstance(count_row, dict) and 'count' in count_row else count_row[0]
-    release_db_connection(conn)
-    return count
+    # Simplified: return the length of merged logs for simplicity and consistency
+    return len(get_attendance_logs(date=date))
 
 def update_attendance_time(employee_id, date, login_time, logout_time):
     # ALWAYS update local first and set synced=0 for background sync to pick it up

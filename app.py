@@ -716,7 +716,7 @@ def background_sync_task():
             sync_attendance_to_supabase()
         except Exception as e:
             print(f"Background Sync Error: {e}")
-        time.sleep(60) # Sync every 60 seconds
+        time.sleep(10) # Sync every 10 seconds
 
 if __name__ == '__main__':
     # Kill any existing process on port 5005 (only in the main process, not the reloader)
